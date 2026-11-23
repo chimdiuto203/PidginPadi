@@ -4,8 +4,6 @@ warnings.filterwarnings("ignore")
 
 import os
 import pickle
-import tempfile
-import requests
 import streamlit as st
 import torch
 import joblib
@@ -17,9 +15,10 @@ from huggingface_hub import hf_hub_download
 # CONSTANTS & PATHING
 # ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# TODO: Replace with your actual Hugging Face repo ID (e.g. "chimdiuto203/pidginpadi-classifiers")
+CLASSIFIERS_REPO_ID = "YOUR_HF_USERNAME/pidginpadi-classifiers"
 CLASSIFIERS_FILENAME = "pidginpadi_classifiers.pkl"
-# Update the tag (e.g. v1.0 -> v1.1) if you upload a new release version
-CLASSIFIERS_URL = "https://github.com/chimdiuto203/PidginPadi/releases/download/v1.0/pidginpadi_classifiers.pkl"
 
 # ==========================================
 # 1. PAGE CONFIGURATION
@@ -29,34 +28,6 @@ st.set_page_config(page_title="PidginPadi | AI Moderator", page_icon="🇳🇬",
 # ==========================================
 # 2. HELPERS & MODEL CACHING
 # ==========================================
-def is_valid_binary_pkl(file_path: str) -> bool:
-    """Return False if file is missing, tiny, an HTML error page, or starts with 0xFF garbage bytes."""
-    if not os.path.exists(file_path) or os.path.getsize(file_path) < 100:
-        return False
-    with open(file_path, "rb") as f:
-        header = f.read(16)
-    if header.lstrip().startswith(b"<") or header.startswith(b"\xff\xff\xff\xff"):
-        return False
-    return True
-
-
-def download_file(url: str, dest_path: str) -> None:
-    """Download a file via streaming and write atomically via a temporary file."""
-    tmp_path = f"{dest_path}.tmp"
-    try:
-        with requests.get(url, stream=True, timeout=120, allow_redirects=True) as response:
-            response.raise_for_status()
-            with open(tmp_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-        os.replace(tmp_path, dest_path)
-    except Exception:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        raise
-
-
 def load_classifiers(classifiers_path: str):
     """Validate and load the classifier bundle using joblib with a standard pickle fallback."""
     file_size = os.path.getsize(classifiers_path)
@@ -64,11 +35,9 @@ def load_classifiers(classifiers_path: str):
         header = f.read(16)
 
     if file_size < 100 or header.lstrip().startswith(b"<") or header.startswith(b"\xff\xff\xff\xff"):
-        if os.access(os.path.dirname(classifiers_path), os.W_OK):
-            os.remove(classifiers_path)
         raise RuntimeError(
-            f"File '{classifiers_path}' is corrupted or not a valid .pkl "
-            f"(size={file_size} bytes, header={header!r}). Please re-upload a valid .pkl to GitHub Releases."
+            f"File '{classifiers_path}' looks corrupted or invalid "
+            f"(size={file_size} bytes, header={header!r})."
         )
 
     try:
@@ -87,30 +56,16 @@ def load_classifiers(classifiers_path: str):
 
 @st.cache_resource(show_spinner=False)
 def load_models():
-    # A. Load NaijaBERT Classifiers (Check local/temp valid file first, else download from GitHub Releases)
-    local_classifiers_path = os.path.join(BASE_DIR, CLASSIFIERS_FILENAME)
-    temp_classifiers_path = os.path.join(tempfile.gettempdir(), CLASSIFIERS_FILENAME)
+    if "YOUR_HF_USERNAME" in CLASSIFIERS_REPO_ID:
+        raise ValueError(
+            "Please update CLASSIFIERS_REPO_ID in app.py with your actual Hugging Face repository ID."
+        )
 
-    classifiers_path = None
-    for candidate in (local_classifiers_path, temp_classifiers_path):
-        if os.path.exists(candidate):
-            if is_valid_binary_pkl(candidate):
-                classifiers_path = candidate
-                break
-            elif os.access(os.path.dirname(candidate), os.W_OK):
-                os.remove(candidate)
-
-    if classifiers_path is None:
-        target_dir = BASE_DIR if os.access(BASE_DIR, os.W_OK) else tempfile.gettempdir()
-        classifiers_path = os.path.join(target_dir, CLASSIFIERS_FILENAME)
-        try:
-            download_file(CLASSIFIERS_URL, classifiers_path)
-        except Exception as e:
-            raise RuntimeError(
-                f"Could not download '{CLASSIFIERS_FILENAME}' from GitHub Releases ({CLASSIFIERS_URL}): "
-                f"{type(e).__name__}: {e}"
-            ) from e
-
+    # A. Load NaijaBERT Classifiers directly from Hugging Face Hub (cached automatically)
+    classifiers_path = hf_hub_download(
+        repo_id=CLASSIFIERS_REPO_ID,
+        filename=CLASSIFIERS_FILENAME
+    )
     classifiers = load_classifiers(classifiers_path)
 
     # B. Load NaijaBERT Engine (Local Folder or Hugging Face Fallback)
@@ -120,7 +75,7 @@ def load_models():
         tokenizer = AutoTokenizer.from_pretrained(offline_model_path, local_files_only=True)
         encoder = AutoModel.from_pretrained(offline_model_path, local_files_only=True)
     else:
-        # Ensure this matches the Hugging Face model name saved in your model_name.pkl
+        # TODO: Make sure this matches the exact Hugging Face model ID in your model_name.pkl
         hf_repo = "HausaNLP/naija-twitter-sentiment"
         tokenizer = AutoTokenizer.from_pretrained(hf_repo)
         encoder = AutoModel.from_pretrained(hf_repo)
