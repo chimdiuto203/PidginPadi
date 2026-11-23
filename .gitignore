@@ -1,0 +1,12 @@
+# Ignore local environment
+__pycache__/
+*.py[cod]
+.venv/
+env/
+
+# Ignore compiled wheel binaries (platform dependent)
+*.whl
+
+# Ignore large weights (They will download automatically)
+*.gguf
+naijabert_offline/
