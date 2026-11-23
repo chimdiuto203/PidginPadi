@@ -3,6 +3,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
+import pickle
 import tempfile
 import requests
 import streamlit as st
@@ -25,7 +26,7 @@ CLASSIFIERS_URL = "https://github.com/chimdiuto203/PidginPadi/releases/download/
 st.set_page_config(page_title="PidginPadi | AI Moderator", page_icon="🇳🇬", layout="wide")
 
 # ==========================================
-# 2. HELPER & MODEL CACHING
+# 2. HELPERS & MODEL CACHING
 # ==========================================
 def download_file(url: str, dest_path: str) -> None:
     """Download a file via streaming and write atomically via a temporary file."""
@@ -42,6 +43,35 @@ def download_file(url: str, dest_path: str) -> None:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
         raise
+
+
+def load_classifiers(classifiers_path: str):
+    """Validate and load the classifier bundle using joblib with a standard pickle fallback."""
+    file_size = os.path.getsize(classifiers_path)
+    with open(classifiers_path, "rb") as f:
+        header = f.read(16)
+
+    # Guard against empty files or HTML error pages saved instead of a binary .pkl
+    if file_size < 100 or header.lstrip().startswith(b"<"):
+        if os.access(os.path.dirname(classifiers_path), os.W_OK):
+            os.remove(classifiers_path)
+        raise RuntimeError(
+            f"Downloaded file '{classifiers_path}' looks invalid "
+            f"(size={file_size} bytes, header={header!r})."
+        )
+
+    try:
+        return joblib.load(classifiers_path)
+    except Exception as joblib_err:
+        try:
+            with open(classifiers_path, "rb") as f:
+                return pickle.load(f)
+        except Exception as pickle_err:
+            raise RuntimeError(
+                f"Failed to load '{classifiers_path}' (size={file_size} bytes, header={header!r}). "
+                f"joblib error: {type(joblib_err).__name__}: {joblib_err} | "
+                f"pickle error: {type(pickle_err).__name__}: {pickle_err}"
+            ) from joblib_err
 
 
 @st.cache_resource(show_spinner=False)
@@ -61,10 +91,11 @@ def load_models():
             download_file(CLASSIFIERS_URL, classifiers_path)
         except Exception as e:
             raise RuntimeError(
-                f"Could not download '{CLASSIFIERS_FILENAME}' from GitHub Releases ({CLASSIFIERS_URL}): {e}"
+                f"Could not download '{CLASSIFIERS_FILENAME}' from GitHub Releases ({CLASSIFIERS_URL}): "
+                f"{type(e).__name__}: {e}"
             ) from e
 
-    classifiers = joblib.load(classifiers_path)
+    classifiers = load_classifiers(classifiers_path)
 
     # B. Load NaijaBERT Engine (Local Folder or Hugging Face Fallback)
     offline_model_path = os.path.join(BASE_DIR, "naijabert_offline")
@@ -103,7 +134,8 @@ try:
     with st.spinner("Initializing AI Models (downloading models on first run, this may take a minute)..."):
         classifiers, tokenizer, encoder, llm = load_models()
 except Exception as e:
-    st.error(f"Failed to initialize AI models: {e}")
+    st.error(f"Failed to initialize AI models: {type(e).__name__}: {e}")
+    st.exception(e)
     st.stop()
 
 # ==========================================
