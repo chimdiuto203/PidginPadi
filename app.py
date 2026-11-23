@@ -17,7 +17,7 @@ from huggingface_hub import hf_hub_download
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # TODO: Replace with your actual Hugging Face repo ID (e.g. "chimdiuto203/pidginpadi-classifiers")
-CLASSIFIERS_REPO_ID = "YOUR_HF_USERNAME/pidginpadi-classifiers"
+CLASSIFIERS_REPO_ID = "pidginpadi/pkl"
 CLASSIFIERS_FILENAME = "pidginpadi_classifiers.pkl"
 
 # ==========================================
