@@ -17,8 +17,10 @@ Loading notes:
   * Every download is validated before use. The artifact this project shipped
     before was 99.8% 0xFF padding, which starts with a perfectly valid pickle
     header and therefore slipped past the old 16-byte header check.
-  * The NaijaBERT encoder must be the SAME encoder used during training.
+  * The NaijaBERT encoder MUST be the same encoder used during training.
     Swapping it for a different checkpoint silently produces nonsense scores.
+    It is published in the same Hugging Face repo as the classifiers, under the
+    'naijabert_offline/' folder.
 """
 
 import warnings
@@ -27,54 +29,40 @@ warnings.filterwarnings("ignore")
 
 import os
 import shutil
-import tempfile
 import zipfile
 
 import joblib
 import requests
 import streamlit as st
 import torch
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, snapshot_download
 from llama_cpp import Llama
 from transformers import AutoModel, AutoTokenizer
 
-# ==========================================
-# CONSTANTS & PATHING
-# ==========================================
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- Classifiers (Hugging Face Hub) ---
-CLASSIFIERS_REPO_ID = "pidginpadi/pkl"
+
+HF_REPO_ID = "pidginpadi/pkl"
 CLASSIFIERS_FILENAME = "pidginpadi_classifiers.pkl"
 EXPECTED_KEYS = ("sentiment", "emotion", "moral", "toxicity")
 
-# --- NaijaBERT encoder ---
-# Preferred source is a GitHub Release asset (the folder is ~600 MB, well over
-# GitHub's 100 MB per-file git limit, but Release assets allow up to 2 GB).
-NAIJABERT_RELEASE_URL = os.environ.get(
-    "NAIJABERT_RELEASE_URL",
-    "https://github.com/chimdiuto203/PidginPadi/releases/download/v1.0/naijabert_offline.zip",
-)
-NAIJABERT_DIR_NAME = "naijabert_offline"
+ENCODER_SUBFOLDER = "naijabert_offline"
 
-# Optional Hugging Face fallback for the encoder. It MUST be the checkpoint the
-# classifiers were trained against, otherwise predictions are meaningless.
+
+NAIJABERT_RELEASE_URL = os.environ.get("NAIJABERT_RELEASE_URL", "")
+
+# Optional override: a different HF repo id that holds the encoder.
 NAIJABERT_HF_REPO = os.environ.get("NAIJABERT_HF_REPO", "")
 
-# --- Qwen GGUF ---
+# --- AI Model ---
 QWEN_REPO_ID = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
 QWEN_FILENAME = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
 
-# ==========================================
-# 1. PAGE CONFIGURATION
-# ==========================================
+
 st.set_page_config(
     page_title="PidginPadi | AI Moderator", page_icon="🇳🇬", layout="wide"
 )
-
-# ==========================================
-# 2. HELPERS & MODEL CACHING
-# ==========================================
 
 
 def cache_root() -> str:
@@ -182,7 +170,7 @@ def load_classifiers(classifiers_path: str):
 def fetch_classifiers() -> str:
     """Download the classifier bundle, recovering from a bad cached copy."""
     path = hf_hub_download(
-        repo_id=CLASSIFIERS_REPO_ID, filename=CLASSIFIERS_FILENAME
+        repo_id=HF_REPO_ID, filename=CLASSIFIERS_FILENAME
     )
 
     corrupt, reason = file_looks_corrupt(path)
@@ -193,7 +181,7 @@ def fetch_classifiers() -> str:
         )
         purge_hf_cache(path)
         path = hf_hub_download(
-            repo_id=CLASSIFIERS_REPO_ID,
+            repo_id=HF_REPO_ID,
             filename=CLASSIFIERS_FILENAME,
             force_download=True,
         )
@@ -201,7 +189,7 @@ def fetch_classifiers() -> str:
         if corrupt:
             raise RuntimeError(
                 f"The classifier bundle published at "
-                f"'{CLASSIFIERS_REPO_ID}/{CLASSIFIERS_FILENAME}' is corrupt "
+                f"'{HF_REPO_ID}/{CLASSIFIERS_FILENAME}' is corrupt "
                 f"({reason}). You must re-generate it and upload a new version."
             )
 
@@ -212,56 +200,86 @@ def is_encoder_folder(path: str) -> bool:
     return os.path.isdir(path) and os.path.exists(os.path.join(path, "config.json"))
 
 
-def ensure_naijabert() -> str:
-    """Return a local folder containing the NaijaBERT encoder."""
-    local_dir = os.path.join(BASE_DIR, NAIJABERT_DIR_NAME)
-    if is_encoder_folder(local_dir):
-        return local_dir
+def ensure_naijabert():
+    """Return (source, subfolder) for the NaijaBERT encoder.
 
-    target = os.path.join(cache_root(), NAIJABERT_DIR_NAME)
-    if is_encoder_folder(target):
-        return target
+    `source` is either a local directory path or a Hugging Face repo id.
+    `subfolder` is the subfolder inside that repo, or None for a local path.
+    """
+    local_dir = os.path.join(BASE_DIR, ENCODER_SUBFOLDER)
+    if is_encoder_folder(local_dir):
+        return local_dir, None
+
+    cached_dir = os.path.join(cache_root(), ENCODER_SUBFOLDER)
+    if is_encoder_folder(cached_dir):
+        return cached_dir, None
+
+    if NAIJABERT_HF_REPO:
+        return NAIJABERT_HF_REPO, ENCODER_SUBFOLDER
+
+    try:
+        st.info(
+            f"Downloading the NaijaBERT encoder from "
+            f"'{HF_REPO_ID}/{ENCODER_SUBFOLDER}/' (about 700 MB, this happens "
+            f"once)..."
+        )
+        snapshot_dir = snapshot_download(
+            repo_id=HF_REPO_ID,
+            allow_patterns=[
+                f"{ENCODER_SUBFOLDER}/config.json",
+                f"{ENCODER_SUBFOLDER}/tokenizer*",
+                f"{ENCODER_SUBFOLDER}/special_tokens_map.json",
+                f"{ENCODER_SUBFOLDER}/vocab.*",
+                f"{ENCODER_SUBFOLDER}/merges.txt",
+                f"{ENCODER_SUBFOLDER}/added_tokens.json",
+                f"{ENCODER_SUBFOLDER}/model.safetensors",
+                f"{ENCODER_SUBFOLDER}/pytorch_model.bin",
+            ],
+        )
+        downloaded = os.path.join(snapshot_dir, ENCODER_SUBFOLDER)
+        if is_encoder_folder(downloaded):
+            return downloaded, None
+        raise RuntimeError(
+            f"'{HF_REPO_ID}/{ENCODER_SUBFOLDER}' does not contain a "
+            f"config.json."
+        )
+    except Exception as err:
+        st.warning(f"Could not fetch the encoder from Hugging Face: {err}")
 
     if NAIJABERT_RELEASE_URL:
-        st.info(f"Downloading NaijaBERT encoder from {NAIJABERT_RELEASE_URL}")
-        zip_path = os.path.join(cache_root(), "naijabert_offline.zip")
         try:
+            st.info(f"Downloading the NaijaBERT encoder from {NAIJABERT_RELEASE_URL}")
+            zip_path = os.path.join(cache_root(), f"{ENCODER_SUBFOLDER}.zip")
             if not os.path.exists(zip_path):
                 download_file(NAIJABERT_RELEASE_URL, zip_path)
-            extract_dir = os.path.join(cache_root(), "naijabert_extract")
+            extract_dir = os.path.join(cache_root(), "encoder_extract")
             shutil.rmtree(extract_dir, ignore_errors=True)
             os.makedirs(extract_dir, exist_ok=True)
             with zipfile.ZipFile(zip_path) as archive:
                 archive.extractall(extract_dir)
 
-            # The archive may or may not contain a top-level folder.
             for candidate in (
-                os.path.join(extract_dir, NAIJABERT_DIR_NAME),
+                os.path.join(extract_dir, ENCODER_SUBFOLDER),
                 extract_dir,
             ):
                 if is_encoder_folder(candidate):
-                    shutil.rmtree(target, ignore_errors=True)
-                    shutil.move(candidate, target)
-                    break
+                    shutil.rmtree(cached_dir, ignore_errors=True)
+                    shutil.move(candidate, cached_dir)
+                    return cached_dir, None
 
-            if not is_encoder_folder(target):
-                raise RuntimeError(
-                    f"'{zip_path}' did not contain a '{NAIJABERT_DIR_NAME}' folder "
-                    f"with a config.json."
-                )
+            raise RuntimeError(
+                f"'{zip_path}' did not contain a '{ENCODER_SUBFOLDER}' folder "
+                f"with a config.json."
+            )
         except Exception as err:
             st.warning(f"Could not fetch the encoder release asset: {err}")
-        else:
-            return target
-
-    if NAIJABERT_HF_REPO:
-        return NAIJABERT_HF_REPO
 
     raise RuntimeError(
-        "Could not locate the NaijaBERT encoder. Upload the 'naijabert_offline' "
-        "folder as a GitHub Release asset (zip) and set NAIJABERT_RELEASE_URL, "
-        "or set NAIJABERT_HF_REPO to the exact Hugging Face repo id used during "
-        "training."
+        f"Could not locate the NaijaBERT encoder. Expected it at "
+        f"'{HF_REPO_ID}/{ENCODER_SUBFOLDER}/' on Hugging Face. Upload the "
+        f"'naijabert_offline' folder there, or set NAIJABERT_RELEASE_URL to a "
+        f"GitHub Release asset, or set NAIJABERT_HF_REPO to the repo id used "
+        f"during training."
     )
 
 
@@ -271,15 +289,26 @@ def load_models():
     classifiers = load_classifiers(fetch_classifiers())
 
     # B. NaijaBERT encoder
-    encoder_source = ensure_naijabert()
+    encoder_source, encoder_subfolder = ensure_naijabert()
     if os.path.isdir(encoder_source):
-        tokenizer = AutoTokenizer.from_pretrained(encoder_source, local_files_only=True)
-        encoder = AutoModel.from_pretrained(encoder_source, local_files_only=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            encoder_source, local_files_only=True
+        )
+        encoder = AutoModel.from_pretrained(
+            encoder_source, local_files_only=True
+        )
+    elif encoder_subfolder:
+        tokenizer = AutoTokenizer.from_pretrained(
+            encoder_source, subfolder=encoder_subfolder
+        )
+        encoder = AutoModel.from_pretrained(
+            encoder_source, subfolder=encoder_subfolder
+        )
     else:
         tokenizer = AutoTokenizer.from_pretrained(encoder_source)
         encoder = AutoModel.from_pretrained(encoder_source)
 
-    # C. Qwen GGUF
+    # C. Offline Model
     local_gguf = os.path.join(BASE_DIR, "qwen2.5-0.5b-instruct-q4_k_m.gguf")
     if os.path.exists(local_gguf):
         model_path = local_gguf
@@ -293,7 +322,6 @@ def load_models():
     return classifiers, tokenizer, encoder, llm
 
 
-# Display loading state while models initialize
 try:
     with st.spinner(
         "Initializing AI Models (downloading models on first run, this may take a minute)..."
@@ -304,9 +332,6 @@ except Exception as e:
     st.exception(e)
     st.stop()
 
-# ==========================================
-# 3. ANALYSIS PIPELINE
-# ==========================================
 
 
 def analyze_with_naijabert(tweet):
@@ -341,9 +366,6 @@ Provide your expert explanation.<|im_end|>
     return response["choices"][0]["text"].strip()
 
 
-# ==========================================
-# 4. WEB INTERFACE
-# ==========================================
 st.title("🇳🇬 PidginPadi: AI Moderator")
 st.markdown(
     "**Architecture:** Dual-Model Pipeline (NaijaBERT + Qwen-0.5B-GGUF Edge Inference)"
