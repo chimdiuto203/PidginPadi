@@ -283,6 +283,191 @@ def ensure_naijabert():
     )
 
 
+# ============================================================
+# PIDGIN DETECTION
+# ============================================================
+
+# Common Nigerian Pidgin vocabulary and patterns
+PIDGIN_VOCABULARY = {
+    # Pronouns & basic words
+    "una", "dey", "na", "wey", "wetin", "weti", "make", "abi", "shey", "seh",
+    "don", "go", "wan", "fit", "sabi", "sab", "no", "nor", "nor be", "no be",
+    "i", "you", "u", "we", "dem", "im", "am", "e", "o", "oh", "eh", "ah",
+    
+    # Common verbs
+    "chop", "commot", "waka", "siddon", "gats", "gatz", "dey", "don", "done",
+    "fit", "no fit", "nor fit", "wan", "want", "dey go", "dey come", "dey do",
+    "carry", "drop", "pick", "put", "take", "give", "collect", "buy", "sell",
+    "hustle", "grind", "ball", "flex", "chill", "catch", "cruise", "vibe",
+    
+    # Common nouns/terms
+    "oga", "madam", "bros", "bro", "sis", "padi", "gee", "guy", "babe", "bobo",
+    "mumu", "olodo", "ode", "agbaya", "ashawo", "olosho", "runs", "belle",
+    "head", "hand", "leg", "eye", "ear", "mouth", "teeth", "nose", "face",
+    "wahala", "wahala", "koboko", "cane", "whip", "slap", "beat", "flog",
+    "thunder", "lightning", "sango", "amadioha", "ogun", "ayelala", "juju",
+    "babalawo", "native", "doctor", "witch", "wizard", "ritual", "sacrifice",
+    "shawarma", "eba", "egusi", "amala", "pounded", "yam", "rice", "beans",
+    "garri", "akpu", "fufu", "semovita", "semolina", "spaghetti", "indomie",
+    
+    # Expressions & markers
+    "abeg", "pls", "please", "biko", "ejo", "ejoo", "make", "let", "make we",
+    "make i", "make una", "make dem", "i dey", "u dey", "you dey", "we dey",
+    "dem dey", "una dey", "i don", "u don", "you don", "we don", "dem don",
+    "i go", "u go", "you go", "we go", "dem go", "una go", "i wan", "u wan",
+    "i fit", "u fit", "you fit", "we fit", "dem fit", "una fit", "i no", "u no",
+    "you no", "we no", "dem no", "una no", "nor", "nor be", "no be", "na so",
+    "na wa", "nawa", "na wa o", "chai", "chei", "cheii", "cheiii", "hian",
+    "hian!", "wow", "omo", "omo!", "omo o", "eh", "eh?", "eh!", "ah", "ah!",
+    
+    # Greetings & social
+    "how far", "howfar", "how u dey", "how body", "how life", "how work",
+    "good morning", "good afternoon", "good evening", "happy sunday",
+    "happy monday", "happy new", "happy birthday", "congratulations", "congrats",
+    "well done", "welldone", "you try", "you too much", "respect", "hail",
+    "big up", "shout out", "shoutout", "love", "bless", "blessed", "favour",
+    "breakthrough", "testimony", "miracle", "open door", "season", "time",
+    
+    # Negation & emphasis
+    "nor", "nor be", "no be", "no be say", "nor be say", "i swear", "i swr",
+    "i swear to god", "wallahi", "wallah", "tallahi", "by god", "by grace",
+    "god willing", "inshallah", "masha allah", "alhamdulillah", "subhanallah",
+    
+    # Question words in Pidgin context
+    "wetin dey happen", "wetin happen", "wetin you dey do", "where you dey",
+    "when you go come", "why you dey", "how you take", "who be that", "which one",
+    
+    # Money & business
+    "kobo", "naira", "change", "balance", "account", "transfer", "alert",
+    "pos", "atm", "bank", "loan", "debt", "credit", "debit", "savings",
+    "investment", "business", "client", "customer", "profit", "loss",
+    
+    # Common phrases
+    "no wahala", "no problem", "easy", "easy oh", "small small", "small small oh",
+    "step by step", "one by one", "day by day", "small time", "quick quick",
+    "sharp sharp", "fast fast", "slow slow", "gentle gentle", "cool down",
+    "calm down", "relax", "take am easy", "no vex", "no worry", "no panic",
+    
+    # Technology & social media
+    "follow", "unfollow", "like", "comment", "share", "retweet", "quote",
+    "dm", "message", "chat", "whatsapp", "telegram", "instagram", "twitter",
+    "facebook", "tiktok", "youtube", "snapchat", "link", "bio", "profile",
+    "post", "story", "reel", "video", "photo", "picture", "screenshot",
+    
+    # Time
+    "today", "tomorrow", "yesterday", "morning", "afternoon", "evening", "night",
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "week", "month", "year", "january", "february", "march", "april", "may",
+    "june", "july", "august", "september", "october", "november", "december",
+    "now", "later", "soon", "just now", "small time ago", "long time", "long time ago",
+}
+
+# Compile regex patterns for common Pidgin structures
+PIDGIN_PATTERNS = [
+    r"\b(una|dey|wey|wetin|weti|make|abi|shey|seh)\b",
+    r"\b(na|no|nor)\s+(be|so|wa|wao|good|bad|true|false)\b",
+    r"\b(i|u|you|we|dem|im|am|e)\s+(dey|don|go|wan|fit|no|nor)\b",
+    r"\b(abeg|biko|ejo|pls|please)\b",
+    r"\b(oga|madam|bros|padi|gee|guy|babe|bobo|mumu|olodo|ode|agbaya)\b",
+    r"\b(wahala|koboko|cane|whip|slap|beat|flog)\b",
+    r"\b(thunder|sango|amadioha|ogun|ayelala|juju|babalawo)\b",
+    r"\b(chop|commot|waka|siddon|gats|gatz|hustle|grind|ball|flex|chill)\b",
+    r"\b(omo|chai|chei|hian|wallahi|wallah|tallahi)\b",
+    r"\b(how\s+(far|body|life|work|u\s+dey)|wetin\s+(dey|happen|you\s+dey))\b",
+    r"\b(no\s+wahala|no\s+problem|small\s+small|sharp\s+sharp|step\s+by\s+step)\b",
+    r"\b(god\s+(bless|blessed|good|willing)|inshallah|masha\s+allah|alhamdulillah)\b",
+]
+
+import re
+PIDGIN_REGEX = [re.compile(p, re.IGNORECASE) for p in PIDGIN_PATTERNS]
+
+
+def is_nigerian_pidgin(text: str, threshold: float = 0.3) -> tuple[bool, float, dict]:
+    """
+    Detect if text is Nigerian Pidgin English.
+    
+    Returns:
+        (is_pidgin: bool, confidence: float, details: dict)
+    """
+    if not text or not text.strip():
+        return False, 0.0, {"reason": "Empty text"}
+    
+    text_lower = text.lower()
+    words = re.findall(r'\b\w+\b', text_lower)
+    total_words = len(words)
+    
+    if total_words == 0:
+        return False, 0.0, {"reason": "No words found"}
+    
+    # Count vocabulary matches
+    vocab_matches = sum(1 for w in words if w in PIDGIN_VOCABULARY)
+    vocab_ratio = vocab_matches / total_words
+    
+    # Count pattern matches
+    pattern_matches = sum(1 for regex in PIDGIN_REGEX if regex.search(text_lower))
+    pattern_score = min(pattern_matches / 5.0, 1.0)  # Normalize
+    
+    # Check for Pidgin-specific orthography (phonetic spelling)
+    pidgin_ortho_patterns = [
+        r"\b(don|dey|wen|wetin|weti|wey|sabi|sab|fit|wan|gats|gatz)\b",
+        r"\b(una|dem|im|am|nor|nor be|no be|make|abi|shey|seh)\b",
+        r"\b(oga|bros|padi|mumu|olodo|ashawo|wahala|chai|omo)\b",
+    ]
+    ortho_matches = sum(1 for p in pidgin_ortho_patterns if re.search(p, text_lower))
+    ortho_score = min(ortho_matches / 3.0, 1.0)
+    
+    # Combined score (weighted)
+    confidence = (vocab_ratio * 0.4) + (pattern_score * 0.35) + (ortho_score * 0.25)
+    
+    # Boost for very short texts with clear Pidgin markers
+    if total_words <= 5 and (vocab_matches > 0 or pattern_matches > 0 or ortho_matches > 0):
+        confidence = max(confidence, 0.5)
+    
+    details = {
+        "total_words": total_words,
+        "vocab_matches": vocab_matches,
+        "vocab_ratio": round(vocab_ratio, 3),
+        "pattern_matches": pattern_matches,
+        "ortho_matches": ortho_matches,
+        "confidence": round(confidence, 3),
+        "matched_words": [w for w in words if w in PIDGIN_VOCABULARY][:20]
+    }
+    
+    return confidence >= threshold, confidence, details
+
+
+def analyze_with_naijabert(tweet):
+    inputs = tokenizer(
+        tweet, return_tensors="pt", truncation=True, max_length=128, padding=True
+    )
+    with torch.no_grad():
+        outputs = encoder(**inputs)
+
+    cls_embedding = outputs.last_hidden_state[:, 0, :].numpy()
+
+    results = {
+        "Sentiment": classifiers["sentiment"].predict(cls_embedding)[0],
+        "Emotion": classifiers["emotion"].predict(cls_embedding)[0],
+        "Moral": classifiers["moral"].predict(cls_embedding)[0],
+        "Toxicity": classifiers["toxicity"].predict(cls_embedding)[0],
+    }
+    return results
+
+
+def generate_ai_explanation(tweet, analytical_data):
+    prompt = f"""<|system|>
+You are PidginPadi, an expert AI in Nigerian Pidgin English, psychology, and content moderation.
+Analyze the user's tweet based on the provided raw data. Keep your explanation professional, concise (under 4 sentences), and explain how the Pidgin phrasing leads to this conclusion.
+<|user|>
+Tweet: "{tweet}"
+Raw Data: Sentiment={analytical_data['Sentiment']}, Emotion={analytical_data['Emotion']}, Moral Violation={analytical_data['Moral']}, Toxicity Scale={analytical_data['Toxicity']}/4.
+Provide your expert explanation.
+<|assistant|>
+"""
+    response = llm(prompt, max_tokens=250, stop=["<|user|>"], temperature=0.3)
+    return response["choices"][0]["text"].strip()
+
+
 @st.cache_resource(show_spinner=False)
 def load_models():
     # A. Classifiers
@@ -333,45 +518,28 @@ except Exception as e:
     st.stop()
 
 
-
-def analyze_with_naijabert(tweet):
-    inputs = tokenizer(
-        tweet, return_tensors="pt", truncation=True, max_length=128, padding=True
-    )
-    with torch.no_grad():
-        outputs = encoder(**inputs)
-
-    cls_embedding = outputs.last_hidden_state[:, 0, :].numpy()
-
-    results = {
-        "Sentiment": classifiers["sentiment"].predict(cls_embedding)[0],
-        "Emotion": classifiers["emotion"].predict(cls_embedding)[0],
-        "Moral": classifiers["moral"].predict(cls_embedding)[0],
-        "Toxicity": classifiers["toxicity"].predict(cls_embedding)[0],
-    }
-    return results
-
-
-def generate_ai_explanation(tweet, analytical_data):
-    prompt = f"""<|im_start|>system
-You are PidginPadi, an expert AI in Nigerian Pidgin English, psychology, and content moderation.
-Analyze the user's tweet based on the provided raw data. Keep your explanation professional, concise (under 4 sentences), and explain how the Pidgin phrasing leads to this conclusion.<|im_end|>
-<|im_start|>user
-Tweet: "{tweet}"
-Raw Data: Sentiment={analytical_data['Sentiment']}, Emotion={analytical_data['Emotion']}, Moral Violation={analytical_data['Moral']}, Toxicity Scale={analytical_data['Toxicity']}/4.
-Provide your expert explanation.<|im_end|>
-<|im_start|>assistant
-"""
-    response = llm(prompt, max_tokens=250, stop=["<|im_end|>"], temperature=0.3)
-    return response["choices"][0]["text"].strip()
-
-
 st.title("🇳🇬 PidginPadi: AI Moderator")
 st.markdown(
     "**Architecture:** Dual-Model Pipeline (NaijaBERT + Qwen-0.5B-GGUF Edge Inference)"
 )
 st.markdown("By **Chinatu Anyanwu**")
 st.divider()
+
+# Language info box
+with st.expander("ℹ️ About PidginPadi - Language Requirements", expanded=False):
+    st.markdown("""
+    **PidginPadi only analyzes Nigerian Pidgin English.** 
+    
+    **Supported:** Nigerian Pidgin (Naija), e.g.:
+    - *"You too much bro God bless you!"*
+    - *"Thunder fire you and your fake promises"*
+    - *"Abeg who get charger make I borrow?"*
+    - *"E no go beta for you, failure for life"*
+    
+    **Not supported:** Standard English, other languages, or code without Pidgin.
+    
+    The system will automatically detect and reject non-Pidgin text.
+    """)
 
 user_input = st.text_area(
     "Paste a Nigerian Pidgin tweet below to analyze:",
@@ -383,6 +551,36 @@ if st.button("Run AI Analysis", type="primary"):
     if not user_input.strip():
         st.warning("Abeg, type something first!")
     else:
+        # --- PIDGIN DETECTION CHECK ---
+        with st.spinner("🔍 Verifying Nigerian Pidgin..."):
+            is_pidgin, confidence, details = is_nigerian_pidgin(user_input)
+        
+        if not is_pidgin:
+            st.error("❌ **This text does not appear to be Nigerian Pidgin English.**")
+            st.markdown(f"""
+            **Detection confidence:** {confidence:.1%} (threshold: 30%)
+            
+            **Details:**
+            - Words analyzed: {details.get('total_words', 0)}
+            - Pidgin vocabulary matches: {details.get('vocab_matches', 0)} ({details.get('vocab_ratio', 0):.1%})
+            - Pattern matches: {details.get('pattern_matches', 0)}
+            - Orthography matches: {details.get('ortho_matches', 0)}
+            - Matched Pidgin words: {', '.join(details.get('matched_words', [])[:10]) or 'None'}
+            
+            **Please enter text in Nigerian Pidgin English (Naija).**
+            
+            *Examples of valid Pidgin:*
+            - *"You too much bro God bless you!"*
+            - *"Thunder fire you and your fake promises"*
+            - *"Abeg who get charger make I borrow?"*
+            - *"E no go beta for you, failure for life"*
+            """)
+            st.stop()
+        
+        # Show detection success
+        st.success(f"✅ Nigerian Pidgin detected (confidence: {confidence:.1%})")
+        
+        # --- RUN ANALYSIS ---
         with st.spinner("Extracting linguistic features via NaijaBERT..."):
             raw_data = analyze_with_naijabert(user_input)
 
